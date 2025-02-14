@@ -1,23 +1,24 @@
 window.addEventListener("DOMContentLoaded", async function () {
     if (navigator.xr) {
         const supported = await navigator.xr.isSessionSupported("immersive-ar");
-        
+
+        console.log("WebXR AR Support:", supported);
+
         if (supported) {
             document.getElementById("renderCanvas").style.display = "block";
             document.getElementById("info-message").style.display = "none";
 
             const canvas = document.getElementById("renderCanvas");
             const engine = new BABYLON.Engine(canvas, true);
-            
+
             const createScene = async function () {
                 const scene = new BABYLON.Scene(engine);
                 const camera = new BABYLON.FreeCamera("myCamera", new BABYLON.Vector3(0, 1, -5), scene);
-                
                 camera.setTarget(BABYLON.Vector3.Zero());
                 camera.attachControl(canvas, true);
-                
+
                 const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 5, 0), scene);
-                light.intensity = 0.1;
+                light.intensity = 0.5;
 
                 const xr = await scene.createDefaultXRExperienceAsync({
                     optionalFeatures: true,
@@ -47,6 +48,8 @@ window.addEventListener("DOMContentLoaded", async function () {
                 dot.isVisible = false;
 
                 hitTest.onHitTestResultObservable.add((results) => {
+                    console.log("Hit test results:", results);
+
                     if (results.length) {
                         dot.isVisible = true;
                         results[0].transformationMatrix.decompose(dot.scaling, dot.rotationQuaternion, dot.position);
@@ -72,6 +75,8 @@ window.addEventListener("DOMContentLoaded", async function () {
 
                 const processClick = () => {
                     const newDot = dot.clone("newDot");
+                    newDot.isVisible = true;
+
                     if (!currentPair) {
                         currentPair = { startDot: newDot };
                     } else {
@@ -81,8 +86,8 @@ window.addEventListener("DOMContentLoaded", async function () {
                     }
                 };
 
-                anchorSystem.onAnchorAddedObservable.add((anchor) => {
-                    anchor.attachedNode = processClick();
+                anchorSystem.onAnchorAddedObservable.add(() => {
+                    processClick();
                 });
 
                 scene.onPointerObservable.add(async (eventData) => {
