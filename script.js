@@ -1,72 +1,113 @@
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.module.js';
-
-let scene, camera, renderer;
-let hitTestSource = null;
-let hitTestSourceRequested = false;
-let xrSession = null;
-
-document.getElementById('start-ar').addEventListener('click', async () => {
+window.addEventListener("DOMContentLoaded", async function () {
     if (navigator.xr) {
-        try {
-            xrSession = await navigator.xr.requestSession('immersive-ar', { requiredFeatures: ['hit-test'] });
-            await setupXR(xrSession);
-        } catch (err) {
-            console.error("WebXR Error:", err);
+        const supported = await navigator.xr.isSessionSupported("immersive-ar");
+        
+        if (supported) {
+            document.getElementById("renderCanvas").style.display = "block";
+            document.getElementById("info-message").style.display = "none";
+
+            const canvas = document.getElementById("renderCanvas");
+            const engine = new BABYLON.Engine(canvas, true);
+            
+            const createScene = async function () {
+                const scene = new BABYLON.Scene(engine);
+                const camera = new BABYLON.FreeCamera("myCamera", new BABYLON.Vector3(0, 1, -5), scene);
+                
+                camera.setTarget(BABYLON.Vector3.Zero());
+                camera.attachControl(canvas, true);
+                
+                const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 5, 0), scene);
+                light.intensity = 0.1;
+
+                const xr = await scene.createDefaultXRExperienceAsync({
+                    optionalFeatures: true,
+                    disableDefaultUI: true,
+                });
+
+                const fm = xr.baseExperience.featuresManager;
+                fm.enableFeature(BABYLON.WebXRBackgroundRemover);
+                const hitTest = fm.enableFeature(BABYLON.WebXRHitTest, "latest");
+                const anchorSystem = fm.enableFeature(BABYLON.WebXRAnchorSystem, "latest");
+
+                const ui = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI("UI");
+                const measurementText = new BABYLON.GUI.TextBlock();
+                measurementText.color = "white";
+                measurementText.fontSize = 24;
+                measurementText.text = "Measure distances";
+                measurementText.top = "-40px";
+                ui.addControl(measurementText);
+
+                let lastHitTest = null;
+                let currentPair = null;
+                let pairs = [];
+
+                const dot = BABYLON.MeshBuilder.CreateSphere("dot", { diameter: 0.05 }, scene);
+                dot.material = new BABYLON.StandardMaterial("dotMat", scene);
+                dot.material.emissiveColor = new BABYLON.Color3(1, 0.5, 0);
+                dot.isVisible = false;
+
+                hitTest.onHitTestResultObservable.add((results) => {
+                    if (results.length) {
+                        dot.isVisible = true;
+                        results[0].transformationMatrix.decompose(dot.scaling, dot.rotationQuaternion, dot.position);
+                        lastHitTest = results[0];
+
+                        if (currentPair) {
+                            if (currentPair.line) {
+                                currentPair.line.dispose();
+                            }
+                            currentPair.line = BABYLON.MeshBuilder.CreateLines("line", {
+                                points: [currentPair.startDot.position, dot.position]
+                            }, scene);
+
+                            const distance = BABYLON.Vector3.Distance(currentPair.startDot.position, dot.position);
+                            const roundedDist = Math.round(distance * 100) / 100;
+                            measurementText.text = `Distance: ${roundedDist} m`;
+                        }
+                    } else {
+                        dot.isVisible = false;
+                        lastHitTest = null;
+                    }
+                });
+
+                const processClick = () => {
+                    const newDot = dot.clone("newDot");
+                    if (!currentPair) {
+                        currentPair = { startDot: newDot };
+                    } else {
+                        currentPair.endDot = newDot;
+                        pairs.push(currentPair);
+                        currentPair = null;
+                    }
+                };
+
+                anchorSystem.onAnchorAddedObservable.add((anchor) => {
+                    anchor.attachedNode = processClick();
+                });
+
+                scene.onPointerObservable.add(async (eventData) => {
+                    if (lastHitTest) {
+                        if (lastHitTest.xrHitResult.createAnchor) {
+                            await anchorSystem.addAnchorPointUsingHitTestResultAsync(lastHitTest);
+                        } else {
+                            processClick();
+                        }
+                    }
+                }, BABYLON.PointerEventTypes.POINTERDOWN);
+
+                engine.runRenderLoop(() => {
+                    scene.render();
+                });
+
+                return scene;
+            };
+
+            await createScene();
+            window.addEventListener("resize", () => engine.resize());
+        } else {
+            document.getElementById("info-message").innerText = "Your device does not support WebXR AR.";
         }
     } else {
-        alert("WebXR not supported on this device.");
+        document.getElementById("info-message").innerText = "WebXR is not available in your browser.";
     }
 });
-
-async function setupXR(session) {
-    const canvas = document.createElement('canvas');
-    document.body.appendChild(canvas);
-
-    renderer = new THREE.WebGLRenderer({ alpha: true, canvas });
-    renderer.xr.enabled = true;
-    renderer.setSize(window.innerWidth, window.innerHeight);
-
-    scene = new THREE.Scene();
-    camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 100);
-
-    // 🔴 Add a test cube to check if rendering works
-    const geometry = new THREE.BoxGeometry(0.1, 0.1, 0.1);
-    const material = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-    const cube = new THREE.Mesh(geometry, material);
-    cube.position.set(0, 0, -0.5); // Place in front of camera
-    scene.add(cube);
-
-    session.updateRenderState({ baseLayer: new XRWebGLLayer(session, renderer.getContext()) });
-
-    const referenceSpace = await session.requestReferenceSpace('local');
-    session.requestAnimationFrame((time, frame) => render(time, frame, referenceSpace));
-
-    document.body.appendChild(renderer.domElement);
-}
-
-function render(time, frame, referenceSpace) {
-    if (!xrSession) return;
-
-    const pose = frame.getViewerPose(referenceSpace);
-    if (pose && !hitTestSourceRequested) {
-        const viewerSpace = xrSession.requestReferenceSpace('viewer');
-        xrSession.requestHitTestSource({ space: viewerSpace }).then(source => {
-            hitTestSource = source;
-        });
-        hitTestSourceRequested = true;
-    }
-
-    if (hitTestSource) {
-        const hitTestResults = frame.getHitTestResults(hitTestSource);
-        if (hitTestResults.length > 0) {
-            const hitPose = hitTestResults[0].getPose(referenceSpace);
-            console.log(`Detected surface at: X=${hitPose.transform.position.x}, Y=${hitPose.transform.position.y}, Z=${hitPose.transform.position.z}`);
-            
-            document.getElementById('output').innerText = 
-                `Surface detected at: ${hitPose.transform.position.x.toFixed(2)}, ${hitPose.transform.position.y.toFixed(2)}, ${hitPose.transform.position.z.toFixed(2)} meters`;
-        }
-    }
-
-    renderer.render(scene, camera);
-    xrSession.requestAnimationFrame((t, f) => render(t, f, referenceSpace));
-}
