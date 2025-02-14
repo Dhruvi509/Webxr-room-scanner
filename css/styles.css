@@ -1,0 +1,21 @@
+body {
+    margin: 0;
+    overflow: hidden;
+    font-family: Arial, sans-serif;
+    background-color: black;
+}
+
+#renderCanvas {
+    width: 100%;
+    height: 100vh;
+    display: none;
+}
+
+#info-message {
+    color: white;
+    font-size: 20px;
+    text-align: center;
+    position: absolute;
+    top: 50%;
+    width: 100%;
+}
