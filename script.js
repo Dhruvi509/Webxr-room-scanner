@@ -29,10 +29,16 @@ async function setupXR(session) {
     scene = new THREE.Scene();
     camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 100);
 
+    // 🔴 Add a test cube to check if rendering works
+    const geometry = new THREE.BoxGeometry(0.1, 0.1, 0.1);
+    const material = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+    const cube = new THREE.Mesh(geometry, material);
+    cube.position.set(0, 0, -0.5); // Place in front of camera
+    scene.add(cube);
+
     session.updateRenderState({ baseLayer: new XRWebGLLayer(session, renderer.getContext()) });
 
     const referenceSpace = await session.requestReferenceSpace('local');
-
     session.requestAnimationFrame((time, frame) => render(time, frame, referenceSpace));
 
     document.body.appendChild(renderer.domElement);
